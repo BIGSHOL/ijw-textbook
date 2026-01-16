@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>교재 시스템 연동</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 320px;
+      font-family: 'Malgun Gothic', sans-serif;
+      font-size: 13px;
+      color: #333;
+    }
+
+    .header {
+      background: #4a90d9;
+      color: white;
+      padding: 15px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      padding: 10px 15px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    .status-indicator.connected {
+      background: #28a745;
+    }
+
+    .status-indicator.disconnected {
+      background: #dc3545;
+    }
+
+    .status-indicator.checking {
+      background: #ffc107;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      flex: 1;
+    }
+
+    .content {
+      padding: 15px;
+    }
+
+    .section {
+      margin-bottom: 15px;
+    }
+
+    .section-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #495057;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .pending-count {
+      background: #e9ecef;
+      padding: 12px;
+      border-radius: 6px;
+      text-align: center;
+    }
+
+    .pending-number {
+      font-size: 28px;
+      font-weight: 700;
+      color: #4a90d9;
+    }
+
+    .pending-label {
+      font-size: 11px;
+      color: #6c757d;
+      margin-top: 4px;
+    }
+
+    .history-list {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e9ecef;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .history-item:last-child {
+      border-bottom: none;
+    }
+
+    .history-name {
+      font-weight: 500;
+    }
+
+    .history-status {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .history-status.paid {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .history-status.registered {
+      background: #cce5ff;
+      color: #004085;
+    }
+
+    .history-time {
+      font-size: 10px;
+      color: #6c757d;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #6c757d;
+      padding: 20px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .btn-primary {
+      background: #4a90d9;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #3a7bc8;
+    }
+
+    .footer {
+      padding: 10px 15px;
+      background: #f8f9fa;
+      border-top: 1px solid #e9ecef;
+      text-align: center;
+      font-size: 11px;
+      color: #6c757d;
+    }
+
+    .footer a {
+      color: #4a90d9;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>교재 시스템 연동</h1>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-indicator checking" id="status-indicator"></div>
+    <span class="status-text" id="status-text">연결 확인 중...</span>
+  </div>
+
+  <div class="content">
+    <div class="section">
+      <div class="section-title">미처리 건수</div>
+      <div class="pending-count">
+        <div class="pending-number" id="pending-count">-</div>
+        <div class="pending-label">등록/납부 대기 중</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">최근 동기화 내역</div>
+      <div class="history-list" id="history-list">
+        <div class="empty-state">동기화 내역이 없습니다</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="open-makeedu">
+      메이크에듀 열기
+    </button>
+  </div>
+
+  <div class="footer">
+    <a href="https://ijw-textbook.web.app" target="_blank">교재 주문 시스템 바로가기</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

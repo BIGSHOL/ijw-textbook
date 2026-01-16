@@ -11,54 +11,195 @@
     2.  **확장프로그램(Content Script)**이 이 동작을 감지하고 학생 이름과 처리 내용을 추출합니다.
     3.  **확장프로그램(Background Script)**이 추출된 정보를 바탕으로 파이어베이스(Firestore)에 접속하여 해당 학생의 교재 신청 내역 상태를 업데이트합니다.
 
-## 3. 구현 내용 (Proposed Changes)
+## 3. 사전 준비 사항 (Prerequisites)
 
-### 3.1 프로젝트 구조
-프로젝트 루트에 `makeedu-ext`라는 별도의 폴더를 생성하여 확장프로그램 코드를 관리합니다.
+### 3.1 Firebase Firestore 보안 규칙 설정
+> [!CAUTION]
+> **필수 작업**: 현재 Firestore 보안 규칙이 설정되지 않아 `Missing or insufficient permissions` 에러가 발생합니다.
 
-### 3.2 주요 구성 요소
+**Firebase Console 설정 방법:**
+1. [Firebase Console](https://console.firebase.google.com) 접속
+2. `ijw-textbook` 프로젝트 선택
+3. 좌측 메뉴 **Firestore Database** → **규칙** 탭 클릭
+4. 아래 규칙으로 교체 후 **게시** 클릭
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 설정 문서: 누구나 읽기/쓰기 가능
+    match /settings/{document=**} {
+      allow read, write: if true;
+    }
+    // 요청 문서: 누구나 읽기/쓰기 가능
+    match /requests/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+> **참고**: 위 규칙은 개발/내부용입니다. 외부 공개 시 Firebase Auth 인증 추가 필요.
+
+### 3.2 Firebase Storage 보안 규칙 설정 (이미지 업로드용)
+1. Firebase Console → **Storage** → **Rules** 탭
+2. 아래 규칙으로 교체:
+
+```javascript
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /requests/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+## 4. 구현 내용 (Proposed Changes)
+
+### 4.1 프로젝트 구조
+별도의 Git 저장소로 분리하여 관리합니다. (교재 시스템 빌드에 포함되지 않도록)
+
+```
+makeedu-sync-extension/    # 별도 저장소
+├── manifest.json
+├── background.js
+├── content.js
+├── popup.html
+├── popup.js
+├── firebase-config.js
+├── icons/
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+└── README.md
+```
+
+### 4.2 주요 구성 요소
 
 #### `manifest.json` 설정
--   **권한**:
-    -   `storage`: 로그인 정보 저장
-    -   `scripting`, `activeTab`: 메이크에듀 사이트 제어
--   **호스트 권한**: `*://school.makeedu.co.kr/*` (메이크에듀 사이트 접근 허용)
-
-#### `firebaseConfig.js`
--   기존 웹앱과 동일한 파이어베이스 설정을 사용하여 DB에 접근합니다.
+```json
+{
+  "manifest_version": 3,
+  "name": "교재 시스템 연동",
+  "version": "1.0.0",
+  "description": "메이크에듀 ↔ 교재 주문 시스템 자동 동기화",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://school.makeedu.co.kr/*",
+    "https://firestore.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [{
+    "matches": ["*://school.makeedu.co.kr/*"],
+    "js": ["content.js"]
+  }],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
+```
 
 #### `background.js` (백그라운드 스크립트)
 -   **역할**: 파이어베이스 Firestore와 직접 통신하는 중계자.
 -   **로직**:
-    1.  Content Script로부터 `{ action: 'REGISTER', name: '홍길동' }` 같은 메시지를 받습니다.
-    2.  Firestore의 `requests` 컬렉션에서 '홍길동' 학생의 최신 신청 내역을 찾습니다.
-    3.  해당 문서의 `isCompleted`(등록 여부) 또는 `isPaid`(납부 여부) 필드를 `true`로 변경하고, 처리 일시(`completedAt`, `paidAt`)를 현재 시간으로 기록합니다.
-    4.  성공/실패 결과를 Content Script로 반환합니다.
+    1.  Content Script로부터 `{ action: 'REGISTER', studentName: '홍길동', teacherName: '김선생' }` 메시지 수신
+    2.  Firestore `requests` 컬렉션에서 **학생이름 + 담임선생님** 조합으로 검색 (동명이인 방지)
+    3.  최근 7일 이내 생성된 문서 중 매칭되는 항목 찾기
+    4.  해당 문서의 `isCompleted`/`isPaid` 필드를 `true`로 업데이트
+    5.  처리 일시(`completedAt`, `paidAt`) 기록
+    6.  성공/실패 결과를 Content Script로 반환
 
 #### `content.js` (콘텐츠 스크립트)
 -   **역할**: 메이크에듀 웹페이지 화면을 보고 있다가 특정 상황을 감지합니다.
 -   **구현 단계**:
-    -   **1단계 (초기)**: 메이크에듀 화면 한구석에 **[교재 시스템 연동]** 버튼을 띄웁니다. 사용자가 학생 작업 후 이 버튼을 누르면 연동되게 합니다. (HTML 구조를 모르기 때문에 가장 확실한 방법입니다)
-    -   **2단계 (자동화)**: 메이크에듀의 "저장 완료" 팝업이나 버튼 클릭 이벤트를 자동으로 감지하여 버튼을 누를 필요 없이 자동 처리되게 개선합니다.
+    -   **1단계 (수동)**: 화면 우측 하단에 플로팅 버튼 표시
+        - **[등록 완료]** 버튼: 현재 화면의 학생을 "등록 완료" 처리
+        - **[납부 완료]** 버튼: 현재 화면의 학생을 "납부 완료" 처리
+        - 학생 이름은 페이지에서 자동 추출 시도, 실패 시 입력창 표시
+    -   **2단계 (자동화)**: HTML 구조 분석 후 자동 감지 구현
 
 #### `popup.html` / `popup.js`
 -   확장프로그램 아이콘 클릭 시 나오는 작은 창입니다.
 -   **기능**:
-    -   **로그인**: 교재 시스템 관리자 계정으로 로그인 (DB 쓰기 권한 획득용).
-    -   **연결 상태 확인**: 현재 시스템과 잘 연결되어 있는지 표시.
+    -   **연결 상태**: Firestore 연결 상태 표시 (🟢 연결됨 / 🔴 오류)
+    -   **최근 동기화 내역**: 최근 처리된 5건 표시
+    -   **수동 동기화**: 학생 이름 직접 입력하여 처리
 
-## 4. 사용자 협조 요청 사항 (User Review Required)
+## 5. 학생 매칭 로직 (Student Matching)
+
+동명이인 문제를 방지하기 위한 매칭 우선순위:
+
+```javascript
+// 1순위: 학생이름 + 담임선생님 + 최근 7일
+query(
+  collection(db, 'requests'),
+  where('studentName', '==', studentName),
+  where('teacherName', '==', teacherName),
+  where('createdAt', '>=', sevenDaysAgo),
+  orderBy('createdAt', 'desc'),
+  limit(1)
+)
+
+// 2순위: 학생이름 + 최근 7일 (담임 정보 없을 때)
+query(
+  collection(db, 'requests'),
+  where('studentName', '==', studentName),
+  where('createdAt', '>=', sevenDaysAgo),
+  orderBy('createdAt', 'desc'),
+  limit(1)
+)
+
+// 매칭 결과가 2개 이상이면 사용자에게 선택 요청
+```
+
+## 6. 사용자 협조 요청 사항 (User Action Required)
+
+### 6.1 Firebase 보안 규칙 설정
+위 **3.1**, **3.2** 섹션의 보안 규칙을 Firebase Console에서 설정해주세요.
+
+### 6.2 HTML 구조 분석 (자동화용)
 > [!IMPORTANT]
-> **HTML 구조 분석 필요**:
-> 제가 메이크에듀 사이트에 접속할 수 없으므로, 자동화를 위해서는 **"등록 완료"** 또는 **"납부 처리"** 화면의 HTML 구조 정보가 반드시 필요합니다.
->
-> **1차 목표**: 우선 수동 트리거(버튼 형태)로 기능을 개발하여 드리고, 사용하시면서 해당 화면의 코드나 스크린샷을 공유해주시면 **완전 자동화**로 업그레이드하는 순서를 제안드립니다.
+> 2단계 자동화를 위해 메이크에듀 사이트의 HTML 정보가 필요합니다.
 
-## 5. 검증 계획 (Verification Plan)
-이 기능은 로컬 환경(내 컴퓨터)에서 크롬 브라우저에 직접 설치하여 테스트해야 합니다.
+**필요한 정보:**
+1. **학생 등록 화면**: "저장" 또는 "등록 완료" 버튼의 HTML
+2. **납부 처리 화면**: "납부 확인" 버튼의 HTML
+3. **학생 정보 표시 영역**: 학생 이름이 표시되는 요소의 HTML
 
-1.  크롬 주소창에 `chrome://extensions` 입력.
-2.  우측 상단 **[개발자 모드]** 켜기.
-3.  **[압축해제된 확장 프로그램을 로드합니다]** 클릭 후 `makeedu-ext` 폴더 선택.
-4.  확장프로그램 아이콘을 눌러 구글 로그인.
-5.  메이크에듀 사이트 접속 후 기능 동작 확인.
+**확인 방법:**
+1. 해당 화면에서 `F12` (개발자 도구) 열기
+2. 버튼/텍스트 요소를 우클릭 → "검사"
+3. 해당 HTML 코드 복사하여 공유
+
+## 7. 검증 계획 (Verification Plan)
+
+### 7.1 확장프로그램 설치
+1. 크롬 주소창에 `chrome://extensions` 입력
+2. 우측 상단 **[개발자 모드]** 켜기
+3. **[압축해제된 확장 프로그램을 로드합니다]** 클릭
+4. `makeedu-sync-extension` 폴더 선택
+
+### 7.2 테스트 시나리오
+| # | 테스트 | 예상 결과 |
+|---|--------|----------|
+| 1 | 확장프로그램 설치 후 팝업 열기 | 연결 상태 🟢 표시 |
+| 2 | 메이크에듀 사이트 접속 | 플로팅 버튼 표시 |
+| 3 | [등록 완료] 버튼 클릭 | 교재 시스템에서 해당 학생 "등록" 체크 |
+| 4 | [납부 완료] 버튼 클릭 | 교재 시스템에서 해당 학생 "납부" 체크 |
+| 5 | 동명이인 학생 처리 | 선택 팝업 표시 |
+
+## 8. 향후 개선 사항 (Future Improvements)
+- [ ] Firebase Auth 연동 (보안 강화)
+- [ ] 자동 감지 기능 (HTML 분석 후)
+- [ ] 배치 처리 (여러 학생 한번에)
+- [ ] 동기화 이력 대시보드
