@@ -40,11 +40,10 @@ async function checkFirestoreConnection() {
 }
 
 /**
- * Get all uncompleted requests from Firestore
+ * Get all uncompleted requests from Firestore with status counts
  */
 async function getUncompletedRequests() {
   try {
-    // Query for documents where isCompleted is false OR isPaid is false
     const url = `${FIRESTORE_BASE_URL}/requests`;
     const response = await fetch(url);
 
@@ -55,15 +54,41 @@ async function getUncompletedRequests() {
     const data = await response.json();
     const documents = data.documents || [];
 
-    // Parse Firestore documents and filter
-    const requests = documents
-      .map(doc => parseFirestoreDocument(doc))
-      .filter(req => req && (!req.isCompleted || !req.isPaid));
+    // Parse all documents
+    const allRequests = documents.map(doc => parseFirestoreDocument(doc)).filter(req => req);
 
-    return { success: true, requests };
+    // Count uncompleted statuses
+    let notRegistered = 0;
+    let notPaid = 0;
+    let notOrdered = 0;
+
+    allRequests.forEach(req => {
+      if (!req.isCompleted) notRegistered++;
+      if (!req.isPaid) notPaid++;
+      if (!req.isOrdered) notOrdered++;
+    });
+
+    // Filter uncompleted requests
+    const requests = allRequests.filter(req => !req.isCompleted || !req.isPaid || !req.isOrdered);
+
+    return {
+      success: true,
+      requests,
+      counts: {
+        notRegistered,
+        notPaid,
+        notOrdered,
+        total: allRequests.length
+      }
+    };
   } catch (error) {
     console.error('Error fetching requests:', error);
-    return { success: false, error: error.message, requests: [] };
+    return {
+      success: false,
+      error: error.message,
+      requests: [],
+      counts: { notRegistered: 0, notPaid: 0, notOrdered: 0, total: 0 }
+    };
   }
 }
 
@@ -107,6 +132,7 @@ async function handleSyncStatus(data) {
       await saveSyncHistory({
         studentName,
         bookName,
+        isCompleted: true,  // Always set to true when syncing
         isPaid,
         syncedAt: new Date().toISOString()
       });

@@ -133,6 +133,64 @@ export const getRequestsFromFirestore = async (page: number = 1, pageSize: numbe
 };
 
 /**
+ * Check if a request is fully completed (all 3 statuses checked)
+ */
+const isFullyCompleted = (data: SavedTextbookRequest) => {
+  return !!data.isCompleted && !!data.isPaid && !!data.isOrdered;
+};
+
+/**
+ * Fetches requests filtered by completion status with pagination
+ * @param filter 'incomplete' | 'complete'
+ * @param page Page number (1-indexed)
+ * @param pageSize Number of items per page
+ */
+export const getFilteredRequestsFromFirestore = async (
+  filter: 'incomplete' | 'complete',
+  page: number = 1,
+  pageSize: number = 20
+) => {
+  try {
+    // Fetch all requests and filter locally (Firestore doesn't support OR queries well)
+    const q = query(
+      collection(db, 'requests'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const querySnapshot = await getDocs(q);
+    const allRequests: SavedTextbookRequest[] = [];
+    querySnapshot.forEach((doc) => {
+      allRequests.push(doc.data() as SavedTextbookRequest);
+    });
+
+    // Filter by completion status
+    const filteredRequests = allRequests.filter(req => {
+      const complete = isFullyCompleted(req);
+      return filter === 'complete' ? complete : !complete;
+    });
+
+    const totalCount = filteredRequests.length;
+    const totalPages = Math.ceil(totalCount / pageSize);
+
+    // Slice for the current page
+    const startIndex = (page - 1) * pageSize;
+    const requests = filteredRequests.slice(startIndex, startIndex + pageSize);
+
+    return {
+      requests,
+      totalCount,
+      totalPages,
+      currentPage: page,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1
+    };
+  } catch (error) {
+    console.error("Error getting filtered requests:", error);
+    throw error;
+  }
+};
+
+/**
  * Updates request fields
  */
 export const updateRequest = async (id: string, updates: Partial<SavedTextbookRequest>) => {

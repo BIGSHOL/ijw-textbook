@@ -32,22 +32,29 @@ async function checkConnection() {
 }
 
 /**
- * Load pending request count
+ * Load pending request counts by status
  */
 async function loadPendingCount() {
-  const countEl = document.getElementById('pending-count');
+  const registeredEl = document.getElementById('not-registered-count');
+  const paidEl = document.getElementById('not-paid-count');
+  const orderedEl = document.getElementById('not-ordered-count');
 
   try {
     const response = await chrome.runtime.sendMessage({ action: 'GET_REQUESTS' });
 
-    if (response.success) {
-      const pending = response.requests.filter(r => !r.isCompleted || !r.isPaid);
-      countEl.textContent = pending.length;
+    if (response.success && response.counts) {
+      registeredEl.textContent = response.counts.notRegistered;
+      paidEl.textContent = response.counts.notPaid;
+      orderedEl.textContent = response.counts.notOrdered;
     } else {
-      countEl.textContent = '?';
+      registeredEl.textContent = '?';
+      paidEl.textContent = '?';
+      orderedEl.textContent = '?';
     }
   } catch (error) {
-    countEl.textContent = '?';
+    registeredEl.textContent = '?';
+    paidEl.textContent = '?';
+    orderedEl.textContent = '?';
   }
 }
 
@@ -68,16 +75,26 @@ async function loadSyncHistory() {
 
     listEl.innerHTML = history.slice(0, 10).map(item => {
       const time = formatTime(item.syncedAt);
-      const statusClass = item.isPaid ? 'paid' : 'registered';
-      const statusText = item.isPaid ? '완납' : '등록';
+
+      // Build status badges
+      const badges = [];
+      if (item.isCompleted) {
+        badges.push('<span class="status-badge completed">등록</span>');
+      }
+      if (item.isPaid) {
+        badges.push('<span class="status-badge paid">납부</span>');
+      }
 
       return `
         <div class="history-item">
-          <div>
+          <div class="history-info">
             <div class="history-name">${escapeHtml(item.studentName)}</div>
+            <div class="history-book">${escapeHtml(item.bookName || '')}</div>
             <div class="history-time">${time}</div>
           </div>
-          <span class="history-status ${statusClass}">${statusText}</span>
+          <div class="history-badges">
+            ${badges.join('')}
+          </div>
         </div>
       `;
     }).join('');

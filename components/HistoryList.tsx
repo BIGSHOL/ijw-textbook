@@ -27,9 +27,32 @@ interface HistoryListProps {
   onDelete: (id: string) => void;
   isAdmin?: boolean;
   onUpdate?: (id: string, updates: Partial<SavedTextbookRequest>) => void;
+  // Tab and pagination props
+  activeHistoryTab: 'incomplete' | 'complete';
+  onTabChange: (tab: 'incomplete' | 'complete') => void;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
+  incompleteTotalCount?: number;
+  completeTotalCount?: number;
 }
 
-export const HistoryList: React.FC<HistoryListProps> = ({ history, onLoad, onDelete, isAdmin, onUpdate }) => {
+export const HistoryList: React.FC<HistoryListProps> = ({
+  history,
+  onLoad,
+  onDelete,
+  isAdmin,
+  onUpdate,
+  activeHistoryTab,
+  onTabChange,
+  currentPage,
+  totalPages,
+  onPageChange,
+  isLoading,
+  incompleteTotalCount = 0,
+  completeTotalCount = 0
+}) => {
   const [downloadingItem, setDownloadingItem] = useState<SavedTextbookRequest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const previewRef = useRef<HTMLDivElement>(null);
@@ -61,39 +84,41 @@ export const HistoryList: React.FC<HistoryListProps> = ({ history, onLoad, onDel
     return !!item.isOrdered && !!item.isCompleted && !!item.isPaid;
   };
 
-  const filteredHistory = history
-    .filter((item) => {
-      const term = searchTerm.toLowerCase();
-      return (
-        item.studentName.toLowerCase().includes(term) ||
-        item.bookName.toLowerCase().includes(term) ||
-        item.teacherName.toLowerCase().includes(term)
-      );
-    })
-    .sort((a, b) => {
-      // 1. Fully Completed Status (Incomplete first)
-      const aComplete = isFullyCompleted(a);
-      const bComplete = isFullyCompleted(b);
-      if (aComplete !== bComplete) {
-        return aComplete ? 1 : -1;
-      }
-      // 2. Date (Newest first)
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-
-  if (history.length === 0) {
+  const filteredHistory = history.filter((item) => {
+    const term = searchTerm.toLowerCase();
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400 p-10">
-        <FileText className="w-16 h-16 mb-4 opacity-20" />
-        <p className="text-lg">저장된 요청 내역이 없습니다.</p>
-        <p className="text-sm">교재 요청서를 작성하고 저장하면 여기에 표시됩니다.</p>
-      </div>
+      item.studentName.toLowerCase().includes(term) ||
+      item.bookName.toLowerCase().includes(term) ||
+      item.teacherName.toLowerCase().includes(term)
     );
-  }
+  });
 
   return (
     <div className="w-full max-w-6xl mx-auto p-6 animate-fadeIn relative">
-      <div className="mb-6 flex justify-end items-center">
+      {/* Tab Navigation */}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex gap-2">
+          <button
+            onClick={() => onTabChange('incomplete')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+              activeHistoryTab === 'incomplete'
+                ? 'bg-brand-green text-white shadow-md'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            미완료 {incompleteTotalCount > 0 && <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full text-xs">{incompleteTotalCount}</span>}
+          </button>
+          <button
+            onClick={() => onTabChange('complete')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+              activeHistoryTab === 'complete'
+                ? 'bg-gray-600 text-white shadow-md'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            완료 {completeTotalCount > 0 && <span className="ml-1 bg-white/20 px-1.5 py-0.5 rounded-full text-xs">{completeTotalCount}</span>}
+          </button>
+        </div>
         <input
           type="text"
           placeholder="이름, 교재명, 선생님 검색..."
@@ -103,6 +128,25 @@ export const HistoryList: React.FC<HistoryListProps> = ({ history, onLoad, onDel
         />
       </div>
 
+      {/* Loading State */}
+      {isLoading && (
+        <div className="text-center py-8 text-gray-500">
+          로딩 중...
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && history.length === 0 && (
+        <div className="flex flex-col items-center justify-center text-gray-400 py-16">
+          <FileText className="w-16 h-16 mb-4 opacity-20" />
+          <p className="text-lg">
+            {activeHistoryTab === 'incomplete' ? '미완료 내역이 없습니다.' : '완료된 내역이 없습니다.'}
+          </p>
+        </div>
+      )}
+
+      {/* Table */}
+      {!isLoading && history.length > 0 && (
       <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -277,19 +321,41 @@ export const HistoryList: React.FC<HistoryListProps> = ({ history, onLoad, onDel
               )}
             </tbody>
           </table>
-        </div >
-      </div >
+        </div>
+      </div>
+      )}
+
+      {/* Pagination */}
+      {!isLoading && totalPages > 0 && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <button
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage <= 1}
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            이전
+          </button>
+          <span className="px-4 py-2 text-sm text-gray-600">
+            {currentPage} / {totalPages} 페이지
+          </span>
+          <button
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage >= totalPages}
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            다음
+          </button>
+        </div>
+      )}
 
       {/* Hidden Preview Card for Generation */}
-      {
-        downloadingItem && (
-          <div style={{ position: 'absolute', top: -9999, left: -9999 }}>
-            <div ref={previewRef}>
-              <PreviewCard data={downloadingItem} />
-            </div>
+      {downloadingItem && (
+        <div style={{ position: 'absolute', top: -9999, left: -9999 }}>
+          <div ref={previewRef}>
+            <PreviewCard data={downloadingItem} />
           </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </div>
   );
 };

@@ -16,7 +16,7 @@ import {
   AccountSettings,
   uploadImageToStorage,
   saveRequestToFirestore,
-  getRequestsFromFirestore,
+  getFilteredRequestsFromFirestore,
   updateRequest,
   deleteRequestFromFirestore,
   getStatusCounts
@@ -44,10 +44,15 @@ const App: React.FC = () => {
   // Admin Auth State
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
+  // History Tab State
+  const [historyTab, setHistoryTab] = useState<'incomplete' | 'complete'>('incomplete');
+
   // Firestore Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [incompleteTotalCount, setIncompleteTotalCount] = useState(0);
+  const [completeTotalCount, setCompleteTotalCount] = useState(0);
 
   // Load account settings on mount
   useEffect(() => {
@@ -71,14 +76,20 @@ const App: React.FC = () => {
   }, []);
 
   // Fetch History from Firestore
-  const fetchHistory = async (page: number = 1) => {
+  const fetchHistory = async (tab: 'incomplete' | 'complete' = historyTab, page: number = 1) => {
     if (isLoadingHistory) return;
     setIsLoadingHistory(true);
     try {
-      const result = await getRequestsFromFirestore(page, 20);
+      const result = await getFilteredRequestsFromFirestore(tab, page, 20);
       setHistory(result.requests);
       setCurrentPage(result.currentPage);
       setTotalPages(result.totalPages);
+
+      // Also fetch counts for both tabs
+      const incompleteResult = await getFilteredRequestsFromFirestore('incomplete', 1, 1);
+      const completeResult = await getFilteredRequestsFromFirestore('complete', 1, 1);
+      setIncompleteTotalCount(incompleteResult.totalCount);
+      setCompleteTotalCount(completeResult.totalCount);
     } catch (error) {
       console.error("Failed to fetch history:", error);
       alert("기록을 불러오는데 실패했습니다.");
@@ -87,10 +98,17 @@ const App: React.FC = () => {
     }
   };
 
+  // Handle history tab change
+  const handleHistoryTabChange = (tab: 'incomplete' | 'complete') => {
+    setHistoryTab(tab);
+    setCurrentPage(1);
+    fetchHistory(tab, 1);
+  };
+
   // Initial History Load
   useEffect(() => {
-    if (activeTab === 'history' && history.length === 0) {
-      fetchHistory();
+    if (activeTab === 'history') {
+      fetchHistory(historyTab, 1);
     }
   }, [activeTab]);
 
@@ -210,10 +228,11 @@ const App: React.FC = () => {
 
     // 3. Save to Firestore (Data Only, No Image Upload)
     try {
-      // Custom ID Format: Teacher_Student_YYYYMMDDHHmmSS
+      // Custom ID Format: Teacher_Student_BookName_YYYYMMDDHHmmss
       const now = new Date();
-      const timestamp = now.toISOString().replace(/[-:T.]/g, '').slice(0, 14); // YYYYMMDDHHmmSS
-      const customId = `${data.teacherName}_${data.studentName}_${timestamp}`;
+      const timestamp = now.toISOString().replace(/[-:T.]/g, '').slice(0, 17); // YYYYMMDDHHmmssSSS (밀리초 포함)
+      const sanitizedBookName = data.bookName.replace(/[^a-zA-Z0-9가-힣]/g, ''); // 특수문자 제거
+      const customId = `${data.teacherName}_${data.studentName}_${sanitizedBookName}_${timestamp}`;
 
       const newRecord: SavedTextbookRequest = {
         ...data,
@@ -472,30 +491,15 @@ const App: React.FC = () => {
               onDelete={handleDeleteHistory}
               isAdmin={isAdminAuthenticated}
               onUpdate={handleUpdateRequest}
+              activeHistoryTab={historyTab}
+              onTabChange={handleHistoryTabChange}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={(page: number) => fetchHistory(historyTab, page)}
+              isLoading={isLoadingHistory}
+              incompleteTotalCount={incompleteTotalCount}
+              completeTotalCount={completeTotalCount}
             />
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="my-4 flex items-center gap-2">
-                <button
-                  onClick={() => fetchHistory(currentPage - 1)}
-                  disabled={isLoadingHistory || currentPage <= 1}
-                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  이전
-                </button>
-                <span className="px-4 py-2 text-sm text-gray-600">
-                  {currentPage} / {totalPages} 페이지
-                </span>
-                <button
-                  onClick={() => fetchHistory(currentPage + 1)}
-                  disabled={isLoadingHistory || currentPage >= totalPages}
-                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  다음
-                </button>
-              </div>
-            )}
-            {isLoadingHistory && <p className="text-gray-500 text-sm my-2">로딩 중...</p>}
           </div>
         )}
 

@@ -60,8 +60,9 @@
     const students = [];
 
     // Find all student rows in the table
-    // Based on HTML analysis: student name is in a.dl_pop.st_ with title attribute
-    const studentLinks = document.querySelectorAll('a.dl_pop.st_');
+    // Based on HTML analysis: student name is in a.dl_pop with title attribute
+    // Includes both st_ (black) and st_red (red) classes
+    const studentLinks = document.querySelectorAll('a.dl_pop[class*="st_"]');
 
     studentLinks.forEach(link => {
       const row = link.closest('tr');

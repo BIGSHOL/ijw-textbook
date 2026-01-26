@@ -83,20 +83,37 @@
       text-transform: uppercase;
     }
 
-    .pending-count {
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .status-item {
       background: #e9ecef;
-      padding: 12px;
+      padding: 10px;
       border-radius: 6px;
       text-align: center;
     }
 
-    .pending-number {
-      font-size: 28px;
+    .status-number {
+      font-size: 24px;
       font-weight: 700;
-      color: #4a90d9;
     }
 
-    .pending-label {
+    .status-number.registered {
+      color: #28a745;
+    }
+
+    .status-number.paid {
+      color: #ffc107;
+    }
+
+    .status-number.ordered {
+      color: #007bff;
+    }
+
+    .status-label {
       font-size: 11px;
       color: #6c757d;
       margin-top: 4px;
@@ -108,40 +125,61 @@
     }
 
     .history-item {
-      padding: 8px 10px;
+      padding: 10px;
       border-bottom: 1px solid #e9ecef;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
     }
 
     .history-item:last-child {
       border-bottom: none;
     }
 
+    .history-info {
+      flex: 1;
+    }
+
     .history-name {
-      font-weight: 500;
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 2px;
     }
 
-    .history-status {
+    .history-book {
       font-size: 11px;
-      padding: 2px 6px;
-      border-radius: 3px;
-    }
-
-    .history-status.paid {
-      background: #d4edda;
-      color: #155724;
-    }
-
-    .history-status.registered {
-      background: #cce5ff;
-      color: #004085;
+      color: #6c757d;
+      margin-bottom: 2px;
     }
 
     .history-time {
       font-size: 10px;
-      color: #6c757d;
+      color: #adb5bd;
+    }
+
+    .history-badges {
+      display: flex;
+      gap: 4px;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .status-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .status-badge.completed {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status-badge.paid {
+      background: #fff3cd;
+      color: #856404;
     }
 
     .empty-state {
@@ -201,10 +239,20 @@
 
   <div class="content">
     <div class="section">
-      <div class="section-title">미처리 건수</div>
-      <div class="pending-count">
-        <div class="pending-number" id="pending-count">-</div>
-        <div class="pending-label">등록/납부 대기 중</div>
+      <div class="section-title">미처리 현황</div>
+      <div class="status-grid">
+        <div class="status-item">
+          <div class="status-number registered" id="not-registered-count">-</div>
+          <div class="status-label">등록</div>
+        </div>
+        <div class="status-item">
+          <div class="status-number paid" id="not-paid-count">-</div>
+          <div class="status-label">납부</div>
+        </div>
+        <div class="status-item">
+          <div class="status-number ordered" id="not-ordered-count">-</div>
+          <div class="status-label">주문</div>
+        </div>
       </div>
     </div>
 
