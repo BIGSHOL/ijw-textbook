@@ -5,6 +5,7 @@ import { PreviewCard } from './components/PreviewCard';
 import { HistoryList } from './components/HistoryList';
 import { Logo } from './components/Logo';
 import { InputGroup } from './components/InputGroup';
+import { AutocompleteInput } from './components/AutocompleteInput';
 import { TextbookRequestData, SavedTextbookRequest, INITIAL_DATA } from './types';
 import { TextbookManager } from './components/TextbookManager';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -19,7 +20,13 @@ import {
   getFilteredRequestsFromFirestore,
   updateRequest,
   deleteRequestFromFirestore,
-  getStatusCounts
+  getStatusCounts,
+  getTextbooksFromFirestore,
+  saveTextbooksToFirestore,
+  getStudentList,
+  getTeacherList,
+  StudentOption,
+  TeacherOption,
 } from './services/firebase';
 
 const App: React.FC = () => {
@@ -35,14 +42,33 @@ const App: React.FC = () => {
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [isBookSelectorOpen, setIsBookSelectorOpen] = useState(false);
 
-  // Custom Textbooks State (Local Storage for now, could be Firestore too)
-  const [textbooks, setTextbooks] = useState<TextbookDef[]>(() => {
-    const saved = localStorage.getItem('customTextbooks');
-    return saved ? JSON.parse(saved) : TEXTBOOKS;
-  });
+  // Custom Textbooks State (Firestore-synced)
+  const [textbooks, setTextbooks] = useState<TextbookDef[]>(TEXTBOOKS);
 
   // Admin Auth State
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+
+  // 학생/선생님 자동완성 데이터
+  const [studentList, setStudentList] = useState<StudentOption[]>([]);
+  const [teacherList, setTeacherList] = useState<TeacherOption[]>([]);
+
+  // Notice popup - resets at 00:00 and 12:00 KST
+  const [showNotice, setShowNotice] = useState(() => {
+    const dismissed = localStorage.getItem('notice-dismissed-2503');
+    if (!dismissed) return true;
+    const dismissedTime = parseInt(dismissed, 10);
+    const now = new Date();
+    // Current KST half-day boundary (00:00 or 12:00 KST)
+    const kstHours = (now.getUTCHours() + 9) % 24;
+    const boundaryOffset = kstHours >= 12 ? 12 : 0;
+    const boundary = new Date(now);
+    boundary.setUTCHours(boundaryOffset - 9 + 24, 0, 0, 0); // Convert KST boundary to UTC
+    if (boundary.getTime() > now.getTime()) {
+      boundary.setDate(boundary.getDate() - 1);
+    }
+    // If dismissed before the latest boundary, show again
+    return dismissedTime < boundary.getTime();
+  });
 
   // History Tab State
   const [historyTab, setHistoryTab] = useState<'incomplete' | 'complete'>('incomplete');
@@ -54,14 +80,13 @@ const App: React.FC = () => {
   const [incompleteTotalCount, setIncompleteTotalCount] = useState(0);
   const [completeTotalCount, setCompleteTotalCount] = useState(0);
 
-  // Load account settings on mount
+  // Load account settings and textbooks on mount
   useEffect(() => {
     const loadSettings = async () => {
       setIsLoadingSettings(true);
       const settings = await getAccountSettings();
-      setAccountSettings(settings); // Just set state, don't auto-fill form yet unless reset
+      setAccountSettings(settings);
 
-      // Initial fill if form is empty
       if (!data.bankName && !data.accountNumber) {
         setData(prev => ({
           ...prev,
@@ -72,7 +97,23 @@ const App: React.FC = () => {
       }
       setIsLoadingSettings(false);
     };
+
+    const loadTextbooks = async () => {
+      const serverBooks = await getTextbooksFromFirestore();
+      if (serverBooks && serverBooks.length > 0) {
+        setTextbooks(serverBooks);
+      }
+    };
+
+    const loadAutocompleteLists = async () => {
+      const [students, teachers] = await Promise.all([getStudentList(), getTeacherList()]);
+      setStudentList(students);
+      setTeacherList(teachers);
+    };
+
     loadSettings();
+    loadTextbooks();
+    loadAutocompleteLists();
   }, []);
 
   // Fetch History from Firestore
@@ -134,10 +175,14 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Save textbooks to local storage whenever changed
-  useEffect(() => {
-    localStorage.setItem('customTextbooks', JSON.stringify(textbooks));
-  }, [textbooks]);
+  // Save textbooks to Firestore whenever changed
+  const handleUpdateTextbooks = async (newBooks: TextbookDef[]) => {
+    setTextbooks(newBooks);
+    const success = await saveTextbooksToFirestore(newBooks);
+    if (!success) {
+      alert('교재 목록 저장에 실패했습니다. 다시 시도해주세요.');
+    }
+  };
 
   // Save account settings handler (Firebase)
   const handleSaveAccountSettings = async (settings: AccountSettings): Promise<boolean> => {
@@ -334,8 +379,37 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const dismissNotice = () => {
+    setShowNotice(false);
+    localStorage.setItem('notice-dismissed-2503', String(Date.now()));
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
+
+      {/* Notice Popup */}
+      {showNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-fadeIn">
+            <div className="bg-brand-green px-6 py-4">
+              <h3 className="text-white font-bold text-lg">안내</h3>
+            </div>
+            <div className="px-6 py-6">
+              <p className="text-gray-800 text-base leading-relaxed">
+                <strong>3월부터</strong> Eywa내의 교재 관리로 통합됩니다.
+              </p>
+            </div>
+            <div className="px-6 pb-5">
+              <button
+                onClick={dismissNotice}
+                className="w-full bg-brand-green text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navbar */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
@@ -416,8 +490,22 @@ const App: React.FC = () => {
                     <User className="w-5 h-5" />
                     <h2>기본 정보</h2>
                   </div>
-                  <InputGroup label="학생 이름" name="studentName" value={data.studentName} onChange={handleChange} placeholder="학생 이름을 입력하세요" />
-                  <InputGroup label="담임 선생님" name="teacherName" value={data.teacherName} onChange={handleChange} placeholder="선생님 성함을 입력하세요" />
+                  <AutocompleteInput
+                    label="학생 이름"
+                    value={data.studentName}
+                    onChange={(v) => setData(prev => ({ ...prev, studentName: v }))}
+                    onSelect={(o) => setData(prev => ({ ...prev, studentName: o.label }))}
+                    options={studentList.map(s => ({ label: s.name, sub: [s.grade, s.school].filter(Boolean).join(' · ') }))}
+                    placeholder="학생 이름을 입력하세요"
+                  />
+                  <AutocompleteInput
+                    label="담임 선생님"
+                    value={data.teacherName}
+                    onChange={(v) => setData(prev => ({ ...prev, teacherName: v }))}
+                    onSelect={(o) => setData(prev => ({ ...prev, teacherName: o.label }))}
+                    options={teacherList.map(t => ({ label: t.name, sub: t.subjects.join(', ') }))}
+                    placeholder="선생님 성함을 입력하세요"
+                  />
                   <InputGroup label="요청 일자" name="requestDate" type="date" value={data.requestDate} onChange={handleChange} />
                 </div>
 
@@ -507,7 +595,7 @@ const App: React.FC = () => {
           <div className="flex-1 bg-gray-50 overflow-y-auto">
             <TextbookManager
               books={textbooks}
-              onUpdateBooks={setTextbooks}
+              onUpdateBooks={handleUpdateTextbooks}
             />
           </div>
         )}

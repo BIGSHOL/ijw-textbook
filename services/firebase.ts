@@ -4,20 +4,20 @@ import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage'
 import { SavedTextbookRequest } from '../types';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDKxS1FpGzGRhp6lP7CxO0sOsRCIYvLxZA",
-  authDomain: "ijw-textbook.firebaseapp.com",
-  projectId: "ijw-textbook",
-  storageBucket: "ijw-textbook.firebasestorage.app",
-  messagingSenderId: "151390597526",
-  appId: "1:151390597526:web:559a2b47e244b92f2O6db7"
+  apiKey: "AIzaSyCDDAnbtu7HDM3JUbFf4jKSH4mS6GYYPkI",
+  authDomain: "ijw-calander.firebaseapp.com",
+  projectId: "ijw-calander",
+  storageBucket: "ijw-calander.firebasestorage.app",
+  messagingSenderId: "231563652148",
+  appId: "1:231563652148:web:4a217812ef96fa3aae2e61"
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const db = getFirestore(app, 'restore260202');
 export const storage = getStorage(app);
 
 // Account Settings
-const SETTINGS_DOC_ID = 'default-account';
+const SETTINGS_DOC_ID = 'textbook-account';
 
 export interface AccountSettings {
   bankName: string;
@@ -51,6 +51,87 @@ export const saveAccountSettings = async (settings: AccountSettings): Promise<bo
   }
 };
 
+// --- Textbook List (Server-synced) ---
+
+import { TextbookDef } from '../data/textbooks';
+
+export const getTextbooksFromFirestore = async (): Promise<TextbookDef[] | null> => {
+  try {
+    const docRef = doc(db, 'settings', 'textbooks');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data().list as TextbookDef[];
+    }
+    return null; // No server data yet
+  } catch (error) {
+    console.error('Error loading textbooks:', error);
+    return null;
+  }
+};
+
+export const saveTextbooksToFirestore = async (textbooks: TextbookDef[]): Promise<boolean> => {
+  try {
+    const docRef = doc(db, 'settings', 'textbooks');
+    await setDoc(docRef, { list: textbooks, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (error) {
+    console.error('Error saving textbooks:', error);
+    return false;
+  }
+};
+
+// --- Students & Teachers (자동완성용) ---
+
+export interface StudentOption {
+  id: string;
+  name: string;
+  grade: string;
+  school: string;
+}
+
+export interface TeacherOption {
+  id: string;
+  name: string;
+  subjects: string[];
+}
+
+export const getStudentList = async (): Promise<StudentOption[]> => {
+  try {
+    const q = query(collection(db, 'students'), where('status', '!=', 'withdrawn'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name || '',
+        grade: data.grade || '',
+        school: data.school || '',
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  } catch (error) {
+    console.error('Error loading students:', error);
+    return [];
+  }
+};
+
+export const getTeacherList = async (): Promise<TeacherOption[]> => {
+  try {
+    const q = query(collection(db, 'staff'), where('role', '==', 'teacher'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name || '',
+        subjects: data.subjects || [],
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  } catch (error) {
+    console.error('Error loading teachers:', error);
+    return [];
+  }
+};
+
 // --- History & Storage Logic ---
 
 /**
@@ -78,7 +159,7 @@ export const saveRequestToFirestore = async (request: SavedTextbookRequest) => {
     // To ensure consistency, let's use the request.id as the document ID if possible, 
     // BUT common practice is to let Firestore generate IDs or use setDoc with custom ID.
     // Given we want to use the same ID, we use setDoc.
-    const docRef = doc(db, 'requests', request.id);
+    const docRef = doc(db, 'textbook_requests', request.id);
     await setDoc(docRef, request);
     return true;
   } catch (error) {
@@ -95,7 +176,7 @@ export const saveRequestToFirestore = async (request: SavedTextbookRequest) => {
 export const getRequestsFromFirestore = async (page: number = 1, pageSize: number = 20) => {
   try {
     // First, get total count for pagination info
-    const countQuery = query(collection(db, 'requests'));
+    const countQuery = query(collection(db, 'textbook_requests'));
     const countSnapshot = await getCountFromServer(countQuery);
     const totalCount = countSnapshot.data().count;
     const totalPages = Math.ceil(totalCount / pageSize);
@@ -103,7 +184,7 @@ export const getRequestsFromFirestore = async (page: number = 1, pageSize: numbe
     // Fetch all and slice for page (simpler approach for small datasets)
     // For large datasets, you'd want to use cursors, but this works for typical use
     const q = query(
-      collection(db, 'requests'),
+      collection(db, 'textbook_requests'),
       orderBy('createdAt', 'desc'),
       limit(page * pageSize)
     );
@@ -153,7 +234,7 @@ export const getFilteredRequestsFromFirestore = async (
   try {
     // Fetch all requests and filter locally (Firestore doesn't support OR queries well)
     const q = query(
-      collection(db, 'requests'),
+      collection(db, 'textbook_requests'),
       orderBy('createdAt', 'desc')
     );
 
@@ -195,7 +276,7 @@ export const getFilteredRequestsFromFirestore = async (
  */
 export const updateRequest = async (id: string, updates: Partial<SavedTextbookRequest>) => {
   try {
-    const docRef = doc(db, 'requests', id);
+    const docRef = doc(db, 'textbook_requests', id);
     await updateDoc(docRef, updates);
     return true;
   } catch (error) {
@@ -209,7 +290,7 @@ export const updateRequest = async (id: string, updates: Partial<SavedTextbookRe
  */
 export const deleteRequestFromFirestore = async (id: string) => {
   try {
-    const docRef = doc(db, 'requests', id);
+    const docRef = doc(db, 'textbook_requests', id);
     await deleteDoc(docRef);
     return true;
     // Note: This doesn't delete the image from Storage to keep it simple, 
@@ -225,7 +306,7 @@ export const deleteRequestFromFirestore = async (id: string) => {
 export const getPendingRequestCount = async () => {
   try {
     const q = query(
-      collection(db, 'requests'),
+      collection(db, 'textbook_requests'),
       where('isCompleted', '==', false)
     );
     const snapshot = await getCountFromServer(q);
@@ -242,7 +323,7 @@ export const getPendingRequestCount = async () => {
 export const getStatusCounts = async () => {
   try {
     // Get all requests and count locally (simpler than 3 separate queries for count aggregation)
-    const q = query(collection(db, 'requests'));
+    const q = query(collection(db, 'textbook_requests'));
     const snapshot = await getDocs(q);
 
     let registered = 0;
