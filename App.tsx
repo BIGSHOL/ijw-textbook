@@ -503,7 +503,10 @@ const App: React.FC = () => {
                     value={data.teacherName}
                     onChange={(v) => setData(prev => ({ ...prev, teacherName: v }))}
                     onSelect={(o) => setData(prev => ({ ...prev, teacherName: o.label }))}
-                    options={teacherList.map(t => ({ label: t.name, sub: t.subjects.join(', ') }))}
+                    options={teacherList.map(t => {
+                      const subjectKo: Record<string, string> = { math: '수학', english: '영어', science: '과학', korean: '국어' };
+                      return { label: t.name, sub: t.subjects.map(s => subjectKo[s] || s).join(', ') };
+                    })}
                     placeholder="선생님 성함을 입력하세요"
                   />
                   <InputGroup label="요청 일자" name="requestDate" type="date" value={data.requestDate} onChange={handleChange} />
