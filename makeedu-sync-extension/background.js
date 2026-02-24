@@ -22,14 +22,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
+
+  if (request.action === 'CHECK_VERSION') {
+    checkLatestVersion()
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
 });
+
+/**
+ * Check latest extension version from Firestore
+ */
+async function checkLatestVersion() {
+  try {
+    const response = await fetch(`${FIRESTORE_BASE_URL}/settings/extension-version`);
+    if (!response.ok) {
+      return { success: false, error: 'Version info not found' };
+    }
+    const data = await response.json();
+    const latestVersion = data.fields?.version?.stringValue;
+    const currentVersion = chrome.runtime.getManifest().version;
+    return {
+      success: true,
+      currentVersion,
+      latestVersion,
+      updateAvailable: latestVersion && latestVersion !== currentVersion
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
 
 /**
  * Check Firestore connection status
  */
 async function checkFirestoreConnection() {
   try {
-    const response = await fetch(`${FIRESTORE_BASE_URL}/settings/default-account`);
+    const response = await fetch(`${FIRESTORE_BASE_URL}/settings/textbook-account`);
     if (response.ok || response.status === 404) {
       return { success: true, connected: true };
     }
@@ -44,7 +74,7 @@ async function checkFirestoreConnection() {
  */
 async function getUncompletedRequests() {
   try {
-    const url = `${FIRESTORE_BASE_URL}/requests`;
+    const url = `${FIRESTORE_BASE_URL}/textbook_requests`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -128,14 +158,20 @@ async function handleSyncStatus(data) {
     });
 
     if (updateResult.success) {
-      // Save to sync history
-      await saveSyncHistory({
-        studentName,
-        bookName,
-        isCompleted: true,  // Always set to true when syncing
-        isPaid,
-        syncedAt: new Date().toISOString()
-      });
+      // Save to sync history - with additional logging
+      console.log('Saving sync history:', { studentName, bookName, isPaid });
+      try {
+        await saveSyncHistory({
+          studentName,
+          bookName,
+          isCompleted: true,  // Always set to true when syncing
+          isPaid,
+          syncedAt: new Date().toISOString()
+        });
+        console.log('Sync history saved successfully');
+      } catch (historyError) {
+        console.error('Failed to save sync history:', historyError);
+      }
     }
 
     return updateResult;
@@ -158,7 +194,7 @@ function normalizeString(str) {
  */
 async function findMatchingRequest(studentName, bookName) {
   try {
-    const url = `${FIRESTORE_BASE_URL}/requests`;
+    const url = `${FIRESTORE_BASE_URL}/textbook_requests`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -223,7 +259,7 @@ async function findMatchingRequest(studentName, bookName) {
  */
 async function updateRequestStatus(docId, updates) {
   try {
-    const url = `${FIRESTORE_BASE_URL}/requests/${docId}?updateMask.fieldPaths=isCompleted&updateMask.fieldPaths=isPaid&updateMask.fieldPaths=completedAt&updateMask.fieldPaths=paidAt`;
+    const url = `${FIRESTORE_BASE_URL}/textbook_requests/${docId}?updateMask.fieldPaths=isCompleted&updateMask.fieldPaths=isPaid&updateMask.fieldPaths=completedAt&updateMask.fieldPaths=paidAt`;
 
     const firestoreUpdates = {
       fields: {}
@@ -299,13 +335,21 @@ function parseFirestoreValue(value) {
  */
 async function saveSyncHistory(entry) {
   try {
+    console.log('[saveSyncHistory] Starting to save entry:', entry);
     const result = await chrome.storage.local.get(['syncHistory']);
+    console.log('[saveSyncHistory] Current history:', result.syncHistory);
     const history = result.syncHistory || [];
     history.unshift(entry);
     // Keep only last 50 entries
     const trimmedHistory = history.slice(0, 50);
+    console.log('[saveSyncHistory] Saving updated history with', trimmedHistory.length, 'items');
     await chrome.storage.local.set({ syncHistory: trimmedHistory });
+    console.log('[saveSyncHistory] Successfully saved to storage');
+
+    // Verify it was saved
+    const verification = await chrome.storage.local.get(['syncHistory']);
+    console.log('[saveSyncHistory] Verification - stored items:', verification.syncHistory?.length);
   } catch (error) {
-    console.error('Error saving sync history:', error);
+    console.error('[saveSyncHistory] Error:', error);
   }
 }

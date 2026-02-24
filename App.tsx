@@ -394,9 +394,13 @@ const App: React.FC = () => {
             <div className="bg-brand-green px-6 py-4">
               <h3 className="text-white font-bold text-lg">안내</h3>
             </div>
-            <div className="px-6 py-6">
+            <div className="px-6 py-6 space-y-3">
               <p className="text-gray-800 text-base leading-relaxed">
                 <strong>3월부터</strong> Eywa내의 교재 관리로 통합됩니다.
+              </p>
+              <p className="text-gray-800 text-sm leading-relaxed bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                ⚠️ <strong>3월 1일부터</strong> 이 페이지는 자동으로<br />
+                <a href="https://ijw-calander.web.app/" className="text-blue-600 underline">Eywa 교재 관리 페이지</a>로 이동됩니다.
               </p>
             </div>
             <div className="px-6 pb-5">

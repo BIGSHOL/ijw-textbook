@@ -1,5 +1,10 @@
 document.addEventListener('DOMContentLoaded', async () => {
+  // Debug: Check all storage content
+  const allStorage = await chrome.storage.local.get(null);
+  console.log('All storage content:', allStorage);
+
   await checkConnection();
+  await checkVersion();
   await loadPendingCount();
   await loadSyncHistory();
 
@@ -7,6 +12,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.tabs.create({ url: 'https://school.makeedu.co.kr' });
   });
 });
+
+/**
+ * Check for extension updates
+ */
+async function checkVersion() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'CHECK_VERSION' });
+    if (response.success && response.updateAvailable) {
+      document.getElementById('update-banner').style.display = 'block';
+      document.getElementById('latest-version').textContent = `v${response.latestVersion}`;
+    }
+  } catch (error) {
+    // Silent fail - version check is not critical
+  }
+}
 
 /**
  * Check Firestore connection status
@@ -72,6 +92,9 @@ async function loadSyncHistory() {
       listEl.innerHTML = '<div class="empty-state">동기화 내역이 없습니다</div>';
       return;
     }
+
+    // 최신순 정렬
+    history.sort((a, b) => new Date(b.syncedAt) - new Date(a.syncedAt));
 
     listEl.innerHTML = history.slice(0, 10).map(item => {
       const time = formatTime(item.syncedAt);

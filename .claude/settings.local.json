@@ -10,7 +10,8 @@
       "Bash(firebase login:*)",
       "Bash(npx tailwindcss:*)",
       "Bash(node:*)",
-      "Bash(dir node_modulestailwindcss /b)"
+      "Bash(dir node_modulestailwindcss /b)",
+      "Read(//d/**)"
     ]
   }
 }
